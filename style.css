@@ -179,3 +179,34 @@ input {
     width: 100%;
   }
 }
+
+/* Dark mode toggle button style */
+#themeToggle {
+  position: fixed;        /* stay visible */
+  top: 16px;              /* distance from top */
+  right: 16px;            /* distance from right */
+  z-index: 1000;
+  background: #003366;    /* dark blue button */
+  color: #fff;
+  border: none;
+  border-radius: 50px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: all 0.3s ease;
+}
+
+/* Animation on hover */
+#themeToggle:hover {
+  transform: scale(1.1);
+  background: #005599;
+}
+
+/* Adjust on small screens */
+@media (max-width: 600px) {
+  #themeToggle {
+    padding: 6px 10px;
+    font-size: 14px;
+  }
+}
+
