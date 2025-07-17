@@ -11,6 +11,7 @@
   <header>
     <img src="logo.png" alt="RailRadar Logo" class="logo">
     <h1>RailRadar</h1>
+    <button id="themeToggle">🌙 Dark Mode</button>
   </header>
 
   <main>
@@ -27,20 +28,48 @@
     </section>
 
     <section>
-      <h2>Find Train Between Stations</h2>
-      <div class="input-group">
-        <input type="text" id="fromStation" placeholder="From Station">
-        <ul id="fromSuggestions" class="suggestions"></ul>
-      </div>
-      <div class="input-group">
-        <input type="text" id="toStation" placeholder="To Station">
-        <ul id="toSuggestions" class="suggestions"></ul>
-      </div>
-      <button onclick="findTrains()">Find Trains</button>
-      <ul id="trainResults"></ul>
-    </section>
+  <h2>Find Train Between Stations</h2>
+  <input type="text" id="fromStation" placeholder="From Station">
+  <ul id="fromSuggestions" class="suggestions"></ul>
+  <input type="text" id="toStation" placeholder="To Station">
+  <ul id="toSuggestions" class="suggestions"></ul>
+  <button onclick="findTrains()">Find Trains</button>
+
+  <div id="trainResultsContainer">
+    <h3>🚂 Upcoming Trains</h3>
+    <table id="upcomingTable">
+      <thead>
+        <tr>
+          <th>Train No</th>
+          <th>Train Name</th>
+          <th>From → To</th>
+          <th>Next</th>
+          <th>Start → End</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <h3>🕰️ Earlier Trains</h3>
+    <table id="earlierTable">
+      <thead>
+        <tr>
+          <th>Train No</th>
+          <th>Train Name</th>
+          <th>From → To</th>
+          <th>Next</th>
+          <th>Start → End</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</section>
+
+
+    <div id="notification" class="hidden"></div>
   </main>
-  
+
   <footer>
     &copy; 2025 RailRadar. All rights reserved.
   </footer>
