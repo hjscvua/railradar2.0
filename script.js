@@ -50,7 +50,7 @@ window.addEventListener('load', async () => {
 document.getElementById('themeToggle').addEventListener('click', () => {
   document.body.classList.toggle('dark');
   const btn = document.getElementById('themeToggle');
-  btn.textContent = document.body.classList.contains('dark') ? '☀️ Light Mode' : '🌙 Dark Mode';
+  btn.textContent = document.body.classList.contains('dark') ? '☀️' : '🌙';
 });
 
 // Example train data
