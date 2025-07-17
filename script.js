@@ -2,19 +2,15 @@ let map;
 let userMarker;
 let trainData = [];
 let stationNames = [];
+let routeLine;
+let trainMarkers = [];
 
-// Load CSV on page load
 window.addEventListener('load', async () => {
   try {
-    console.log("Loading CSV file...");
     const res = await fetch('Train_details_22122017.csv');
-    if (!res.ok) throw new Error(`HTTP error! Status: ${res.status}`);
     const csv = await res.text();
-    console.log("CSV loaded, sample:", csv.slice(0, 100));
-
     const lines = csv.trim().split('\n');
-    lines.shift(); // remove header if present
-
+    lines.shift();
     trainData = lines.map(line => {
       const cols = line.split(',');
       return {
@@ -33,10 +29,6 @@ window.addEventListener('load', async () => {
         nextToFullLower: cols[11]?.trim().toLowerCase()
       };
     });
-
-    console.log("Parsed train data sample:", trainData.slice(0, 5));
-
-    // Build unique station names for suggestions
     const nameSet = new Set();
     trainData.forEach(t => {
       if (t.fromFull) nameSet.add(t.fromFull);
@@ -47,113 +39,201 @@ window.addEventListener('load', async () => {
     setupAutoSuggest('fromStation', 'fromSuggestions');
     setupAutoSuggest('toStation', 'toSuggestions');
 
+    document.getElementById('fromStation').addEventListener('keydown', e => { if(e.key === 'Enter') findTrains(); });
+    document.getElementById('toStation').addEventListener('keydown', e => { if(e.key === 'Enter') findTrains(); });
+
   } catch (e) {
-    console.error('Error loading CSV:', e);
+    console.error(e);
   }
 });
 
-// Show user location on map
+document.getElementById('themeToggle').addEventListener('click', () => {
+  document.body.classList.toggle('dark');
+  const btn = document.getElementById('themeToggle');
+  btn.textContent = document.body.classList.contains('dark') ? '☀️ Light Mode' : '🌙 Dark Mode';
+});
+
+// Example train data
+const trainData0 = [
+  { trainNo: '30313', trainName: 'MJT-BT LOCAL', from: 'MAJERHAT', to: 'BARASAT JN.', next: 'Next Station', start: '21:10', end: '21:11' },
+  { trainNo: '30312', trainName: 'BT-PPGT LOC', from: 'BARASAT JN.', to: 'MAJERHAT', next: 'Next Station', start: '15:50', end: '15:50' }
+];
+
+// Example: populate table on load
+document.addEventListener('DOMContentLoaded', () => {
+  const tbody = document.querySelector('#trainResults tbody');
+  trainData.forEach(t => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${t.trainNo}</td>
+      <td>${t.trainName}</td>
+      <td>${t.from} → ${t.to}</td>
+      <td>${t.next}</td>
+      <td>${t.start} → ${t.end}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+});
+
+// add other logic like getLocation(), auto-suggest, etc.
+
+
+
+
+
+let watchId;
+
 async function getLocation() {
   if (!navigator.geolocation) {
-    alert("Geolocation not supported by this browser.");
+    alert("Geolocation not supported.");
     return;
   }
-  navigator.geolocation.getCurrentPosition(async (pos) => {
+  watchId = navigator.geolocation.watchPosition(async pos => {
     const lat = pos.coords.latitude;
     const lon = pos.coords.longitude;
+
+    if (!map) {
+      initMap(lat, lon);
+    } else {
+      userMarker.setLatLng([lat, lon]);
+    }
     document.getElementById('locationOutput').textContent = `Lat: ${lat.toFixed(4)}, Lon: ${lon.toFixed(4)}`;
-    initMap(lat, lon);
     await reverseGeocode(lat, lon);
     await fetchNearbyStations(lat, lon);
-  }, () => {
-    alert("Could not get your location.");
+    simulateLiveTrains(lat, lon);
+  }, err => {
+    console.error(err);
+    alert("Could not get location.");
+  }, { enableHighAccuracy: true });
+}
+
+function initMap(lat, lon) {
+  const userIcon = L.icon({ iconUrl: 'user-icon.png', iconSize: [32, 32], iconAnchor: [16, 16] });
+  map = L.map('map').setView([lat, lon], 13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+  userMarker = L.marker([lat, lon], { icon: userIcon }).addTo(map).bindPopup("You are here").openPopup();
+}
+
+async function reverseGeocode(lat, lon) {
+  const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+  const data = await res.json();
+  document.getElementById('addressOutput').textContent = data.display_name || 'Address not found';
+}
+
+async function fetchNearbyStations(lat, lon) {
+  const query = `[out:json];node["railway"="station"](around:3000,${lat},${lon});out;`;
+  const res = await fetch('https://overpass-api.de/api/interpreter', {
+    method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: query
+  });
+  const data = await res.json();
+  data.elements.forEach(e => {
+    if (e.lat && e.lon && e.tags?.name) {
+      const marker = L.marker([e.lat, e.lon]).addTo(map).bindPopup(e.tags.name);
+      marker.on('click', () => {
+        drawRoute(lat, lon, e.lat, e.lon);
+        showToast(`Drawing route to ${e.tags.name}`);
+      });
+    }
   });
 }
 
-// Initialize or update map
-function initMap(lat, lon) {
-  if (!map) {
-    map = L.map('map').setView([lat, lon], 13);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(map);
-    userMarker = L.marker([lat, lon]).addTo(map).bindPopup("You are here").openPopup();
-  } else {
-    map.setView([lat, lon], 13);
-    userMarker.setLatLng([lat, lon]);
-  }
-}
-
-// Reverse geocode
-async function reverseGeocode(lat, lon) {
-  try {
-    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
-    const data = await res.json();
-    document.getElementById('addressOutput').textContent = data.display_name || 'Address not found';
-  } catch (e) {
-    console.error('Reverse geocode error:', e);
-  }
-}
-
-// Fetch nearby railway stations
-async function fetchNearbyStations(lat, lon) {
-  const query = `
-    [out:json];
-    node["railway"="station"](around:3000,${lat},${lon});
-    out;
-  `;
-  try {
-    const res = await fetch('https://overpass-api.de/api/interpreter', {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: query
-    });
-    const data = await res.json();
-    data.elements.forEach(e => {
-      if (e.lat && e.lon && e.tags?.name) {
-        L.marker([e.lat, e.lon]).addTo(map).bindPopup(e.tags.name);
-      }
-    });
-  } catch (e) {
-    console.error('Overpass API error:', e);
-  }
-}
-
-// Find trains
 function findTrains() {
   const from = document.getElementById('fromStation').value.trim().toLowerCase();
   const to = document.getElementById('toStation').value.trim().toLowerCase();
+
+  const now = new Date();
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
 
   const found = trainData.filter(t =>
     t.fromFullLower === from && (t.toFullLower === to || t.nextToFullLower === to)
   );
 
-  const list = document.getElementById('trainResults');
-  list.innerHTML = '';
+  const upcoming = [];
+  const earlier = [];
 
-  if (found.length === 0) {
-    list.innerHTML = '<li>No trains found.</li>';
+  found.forEach(t => {
+    if (t.startTime && t.startTime !== "00:00:00") {
+      const [h, m] = t.startTime.split(':').map(Number);
+      const trainMinutes = h * 60 + m;
+      if (trainMinutes >= nowMinutes) {
+        upcoming.push(t);
+      } else {
+        earlier.push(t);
+      }
+    } else {
+      earlier.push(t);
+    }
+  });
+
+  const upcomingBody = document.querySelector('#upcomingTable tbody');
+  const earlierBody = document.querySelector('#earlierTable tbody');
+  upcomingBody.innerHTML = '';
+  earlierBody.innerHTML = '';
+
+  if (upcoming.length === 0) {
+    upcomingBody.innerHTML = '<tr><td colspan="5">No upcoming trains found.</td></tr>';
   } else {
-    found.forEach(t => {
-      const li = document.createElement('li');
-      li.textContent = `${t.trainNo} - ${t.trainName} | ${t.fromShort} (${t.fromFull}) → ${t.toShort} (${t.toFull}) | Next: ${t.nextToShort} (${t.nextToFull}) | Start: ${t.startTime} | End: ${t.endTime}`;
-      list.appendChild(li);
+    upcoming.forEach(t => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${t.trainNo}</td>
+        <td>${t.trainName}</td>
+        <td>${t.fromShort} (${t.fromFull}) → ${t.toShort} (${t.toFull})</td>
+        <td>${t.nextToShort} (${t.nextToFull})</td>
+        <td>${t.startTime} → ${t.endTime}</td>
+      `;
+      upcomingBody.appendChild(tr);
+    });
+  }
+
+  if (earlier.length === 0) {
+    earlierBody.innerHTML = '<tr><td colspan="5">No earlier trains found.</td></tr>';
+  } else {
+    earlier.forEach(t => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${t.trainNo}</td>
+        <td>${t.trainName}</td>
+        <td>${t.fromShort} (${t.fromFull}) → ${t.toShort} (${t.toFull})</td>
+        <td>${t.nextToShort} (${t.nextToFull})</td>
+        <td>${t.startTime} → ${t.endTime}</td>
+      `;
+      earlierBody.appendChild(tr);
     });
   }
 }
 
-// Autocomplete suggestions
-// Autocomplete suggestions
+
+  function addHeading(title) {
+    const heading = document.createElement('li');
+    heading.innerHTML = `<strong>${title}</strong>`;
+    heading.style.background = '#003366';
+    heading.style.color = '#fff';
+    heading.style.padding = '4px';
+    list.appendChild(heading);
+    const columns = document.createElement('li');
+    columns.innerHTML = `<strong>No</strong> | <strong>Name</strong> | <strong>From</strong> → <strong>To</strong> | Next | Start → End`;
+    list.appendChild(columns);
+  }
+  function addTrains(trains) {
+    trains.forEach(t => {
+      const li = document.createElement('li');
+      li.innerHTML = `${t.trainNo} - ${t.trainName} | ${t.fromShort} (${t.fromFull}) → ${t.toShort} (${t.toFull}) | Next: ${t.nextToShort} (${t.nextToFull}) | ${t.startTime} → ${t.endTime}`;
+      li.style.padding = '4px 0';
+      list.appendChild(li);
+    });
+  }
+  if (upcoming.length) { addHeading('Upcoming Trains'); addTrains(upcoming); }
+  if (earlier.length) { addHeading('Earlier Trains'); addTrains(earlier); }
+
+
 function setupAutoSuggest(inputId, suggestionsId) {
   const input = document.getElementById(inputId);
   const suggestions = document.getElementById(suggestionsId);
-
   input.addEventListener('input', () => {
-    const value = input.value.trim().toLowerCase();
+    const value = input.value.toLowerCase();
     suggestions.innerHTML = '';
-
     if (!value) return;
-
     const matches = stationNames.filter(name => name.toLowerCase().includes(value));
     matches.forEach(name => {
       const li = document.createElement('li');
@@ -165,9 +245,35 @@ function setupAutoSuggest(inputId, suggestionsId) {
       suggestions.appendChild(li);
     });
   });
-
-  input.addEventListener('blur', () => {
-    setTimeout(() => suggestions.innerHTML = '', 200);
-  });
+  input.addEventListener('blur', () => setTimeout(() => suggestions.innerHTML = '', 200));
 }
 
+async function drawRoute(fromLat, fromLon, toLat, toLon) {
+  const res = await fetch(`https://router.project-osrm.org/route/v1/driving/${fromLon},${fromLat};${toLon},${toLat}?overview=full&geometries=geojson`);
+  const data = await res.json();
+  if (data.routes.length > 0) {
+    const coords = data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+    if (routeLine) map.removeLayer(routeLine);
+    routeLine = L.polyline(coords, { color: 'blue' }).addTo(map);
+    map.fitBounds(routeLine.getBounds());
+  }
+}
+
+function showToast(msg) {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.className = 'toast show';
+  setTimeout(() => { toast.className = 'toast'; }, 3000);
+}
+
+function simulateLiveTrains(lat, lon) {
+  trainMarkers.forEach(m => map.removeLayer(m));
+  trainMarkers = [];
+  for (let i = 0; i < 3; i++) {
+    const rLat = lat + (Math.random() - 0.5) * 0.02;
+    const rLon = lon + (Math.random() - 0.5) * 0.02;
+    const icon = L.icon({ iconUrl: 'train-icon.png', iconSize: [24, 24], iconAnchor: [12, 12] });
+    const m = L.marker([rLat, rLon], { icon }).addTo(map).bindPopup(`Train ${i+1}`);
+    trainMarkers.push(m);
+  }
+}
