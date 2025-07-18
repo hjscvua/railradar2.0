@@ -44,21 +44,22 @@ header {
 }
 
 #themeToggle {
-  position: absolute;
-  right: 10px;
-  top: 10px;
-  background: var(--button);
-  color: #fff;
+  font-size: 1.5rem;       /* make icon clear */
+  width: 40px;
+  height: 40px;
   border: none;
-  padding: 6px 12px;
-  border-radius: 4px;
+  border-radius: 50%;
+  background: #003366;
+  color: #fff;
   cursor: pointer;
-  transition: background 0.4s;
+  transition: background 0.3s, transform 0.3s;
 }
 
 #themeToggle:hover {
-  background: var(--button-hover);
+  background: #0055aa;
+  transform: scale(1.1);
 }
+
 
 main {
   max-width: 900px;
